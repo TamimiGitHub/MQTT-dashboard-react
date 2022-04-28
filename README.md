@@ -6,3 +6,7 @@ This project was bootstrapped from [EMQ X MQTT client Examples](https://github.c
 
 1. Install dependencies `npm i`
 1. `npm start`
+
+
+## References
+Based on https://github.com/emqx/MQTT-Client-Examples/tree/master/mqtt-client-React

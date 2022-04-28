@@ -1,6 +1,5 @@
 import React, { createContext, useEffect, useState } from "react";
 import Connection from "./Connection";
-import Publisher from "./Publisher";
 import Subscriber from "./Subscriber";
 import Receiver from "./Receiver";
 import mqtt from "mqtt";
