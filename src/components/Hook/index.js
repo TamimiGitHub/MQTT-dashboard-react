@@ -1,79 +1,66 @@
-import React, { createContext, useEffect, useState } from "react";
-import Connection from "./Connection";
-import Subscriber from "./Subscriber";
+import React, { useEffect, useState } from "react";
+import {Button, Card, Col} from "antd";
 import Receiver from "./Receiver";
 import mqtt from "mqtt";
-
-export const QosOption = createContext([]);
-const qosOption = [
-  {
-    label: "0",
-    value: 0,
-  },
-  {
-    label: "1",
-    value: 1,
-  },
-  {
-    label: "2",
-    value: 2,
-  },
-];
+import { ApiOutlined } from '@ant-design/icons';
 
 const HookMqtt = () => {
   const [client, setClient] = useState(null);
+  const [subTopic, setSubscription] = useState(null);
   const [isSubed, setIsSub] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
   const [payload, setPayload] = useState({});
-  const [connectStatus, setConnectStatus] = useState("Connect");
+  
+  var startTime = new Date();
 
   const mqttConnect = (host, mqttOption) => {
-    setConnectStatus("Connecting");
     console.log(`Connecting to ${host} with options:`, mqttOption);
     setClient(mqtt.connect(host, mqttOption));
+    setIsConnected(true)
   };
 
   useEffect(() => {
     if (client) {
       client.on("connect", () => {
-        setConnectStatus("Connected");
+        console.log(`Connected to client: ${client.options.host}`)
+        console.log(`Subscribing to: ${subTopic}`)
+        mqttSub(subTopic)
       });
       client.on("error", (err) => {
         console.error("Connection error: ", err);
         client.end();
       });
       client.on("reconnect", () => {
-        setConnectStatus("Reconnecting");
+        console.log(`Reconnecting to client: ${client.options.host}`)
       });
       client.on("message", (topic, message) => {
-        const payload = { topic, message: message.toString() };
-        setPayload(payload);
+        // throttle the messages
+        let endTime = new Date()
+        var timeDiff = endTime - startTime
+        timeDiff /= 1000
+        // var seconds = Math.round(timeDiff)
+        if (timeDiff > 0.5){
+          const payload = { topic, message: message.toString() };
+          startTime = new Date()
+          setPayload(payload);
+        }
       });
     }
   }, [client]);
 
-  const mqttDisconnect = () => {
-    if (client) {
+  const mqttDisconnect = (currHost) => {
+    if (client.options.host !== currHost.split("//")[1]) {
       client.end(() => {
-        setConnectStatus("Connect");
+        console.log(`Disconnected from : ${client.options.host}`)
+        setIsConnected(false)
+        setClient(null)
       });
     }
   };
 
-  const mqttPublish = (context) => {
+  const mqttSub = (topic) => {
     if (client) {
-      const { topic, qos, payload } = context;
-      client.publish(topic, payload, { qos }, (error) => {
-        if (error) {
-          console.log("Publish error: ", error);
-        }
-      });
-    }
-  };
-
-  const mqttSub = (subscription) => {
-    if (client) {
-      const { topic, qos } = subscription;
-      client.subscribe(topic, { qos }, (error) => {
+      client.subscribe(topic, (error) => {
         if (error) {
           console.log("Subscribe to topics error", error);
           return;
@@ -83,26 +70,75 @@ const HookMqtt = () => {
     }
   };
 
-  const mqttUnSub = (subscription) => {
+  const handleConnect = (stream) => {
+    client ? console.log(`MQTT client already connected to: ${client.options.host}`) : console.log("No connected client")
+    const options = {
+      keepalive: 30,
+      protocolId: "MQTT",
+      protocolVersion: 4,
+      clean: true,
+      reconnectPeriod: 1000,
+      connectTimeout: 30 * 1000,
+      will: {
+        topic: "WillMsg",
+        payload: "Connection Closed abnormally..!",
+        qos: 0,
+        retain: false,
+      },
+      rejectUnauthorized: false,
+    };
+    options.username = stream.username;
+    options.password = stream.password;
+    setSubscription(`${stream.topicPrefix}/#`)
     if (client) {
-      const { topic } = subscription;
-      client.unsubscribe(topic, (error) => {
-        if (error) {
-          console.log("Unsubscribe error", error);
-          return;
-        }
-        setIsSub(false);
-      });
+      mqttDisconnect(stream.host) 
+      mqttConnect(stream.host, options)
+    } else {
+      mqttConnect(stream.host, options)
     }
   };
 
+  const handleDisconnect = (host) => {
+    mqttDisconnect(host)
+  }
+
+const streams = [
+  {
+    id: "taxi",
+    name: "Taxi",
+    host: "wss://taxi.messaging.solace.cloud:8443",
+    username: "public-taxi-user",
+    password: "iliketaxis",
+    topicPrefix: "taxinyc/ops/ride/updated"
+  },
+  {
+    id: "aviation",
+    name: "Aviation",
+    host: "wss://mrxqumn51vyv1.messaging.solace.cloud:8443",
+    username: "solace-cloud-client",
+    password: "djism9m131tv04o0qlvmg6bjo0",
+    topicPrefix: "FDPS/position"
+  },
+]
   return (
     <>
-      <h1 style={{ color: "white" }}>Solace IoT MQTT Subscriber</h1>
-      <Connection connect={mqttConnect} disconnect={mqttDisconnect} connectBtn={connectStatus} />
-      <QosOption.Provider value={qosOption}>
-        <Subscriber sub={mqttSub} unSub={mqttUnSub} showUnsub={isSubed} />
-      </QosOption.Provider>
+      <Card>
+        {isConnected && isSubed ? (
+            <ApiOutlined style={{ color: "green" }}/>
+          ) : (
+            <ApiOutlined/>
+        )}
+        <Col>
+        {streams.map((stream) =>(
+          <Button key={stream.id} onClick={() => {handleConnect(stream)}}>{stream.name}</Button>  
+        ))}
+        {isConnected ? (
+          <Button danger onClick={() => {handleDisconnect("all")}}>Disconnect</Button>  
+          ) : (
+            ""
+        )}
+        </Col>
+      </Card>
       <Receiver payload={payload} />
     </>
   );
